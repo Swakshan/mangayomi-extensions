@@ -7,7 +7,7 @@ const mangayomiSources = [{
     "typeSource": "multi",
     "isManga": false,
     "itemType": 1,
-    "version": "1.2.6",
+    "version": "1.3.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/src/all/autoembed.js"
@@ -259,18 +259,19 @@ class DefaultExtension extends MProvider {
 
     // Gets subtitles based on TMDB id.
     async getSubtitleList(id, s, e) {
-        var subPref = parseInt(this.getPreference("autoembed_pref_subtitle_source"));
+        // var subPref = parseInt(this.getPreference("autoembed_pref_subtitle_source"));
 
         var api = `https://sub.wyzie.ru/search?id=${id}`
         var hdr = {}
+        if (s != "0") api = `${api}&season=${s}&episode=${e}`
 
-        if (subPref === 2) {
-            api = `https://sources.hexa.watch/subs/${id}`
-            hdr = { "Origin": "https://api.hexa.watch" }
-            if (s != "0") api = `${api}/${s}/${e}`
-        } else {
-            if (s != "0") api = `${api}&season=${s}&episode=${e}`
-        }
+        // if (subPref === 2) {
+        //     api = `https://sources.hexa.watch/subs/${id}`
+        //     hdr = { "Origin": "https://api.hexa.watch" }
+        //     if (s != "0") api = `${api}/${s}/${e}`
+        // } else {
+
+        // }
         var response = await new Client().get(api, hdr);
         var body = JSON.parse(response.body);
 
@@ -287,9 +288,9 @@ class DefaultExtension extends MProvider {
 
     // For anime episode video list
     async getVideoList(url) {
-        var streamAPI = parseInt(this.getPreference("autoembed_stream_source_3"))
+        var streamAPI = parseInt(this.getPreference("autoembed_stream_source_4"))
         var nativeSubs = this.getPreference("autoembed_pref_navtive_subtitle")
-
+        
         var parts = url.split("||");
         var media_type = parts[0];
         var id = parts[1];
@@ -401,35 +402,40 @@ class DefaultExtension extends MProvider {
 
                 var body = JSON.parse(response.body);
                 var link = body.sources[0].file
-                if(nativeSubs) subtitles = body.tracks
+                if (nativeSubs) subtitles = body.tracks
                 streams = await this.extractStreams(link);
                 break;
-            }
-            case 6: {
+            } case 6: {
                 if (media_type == "tv") {
-                    id = `${id}/${s}/${e}`
+                    id = `${id}&s=${s}&e=${e}`
                 }
-                var api = `https://sources.hexa.watch/plsdontscrapemeuwu/${id}`
-                var hdr = { "Origin": "https://api.hexa.watch" }
+                var baseUrl = "https://autoembed.cc"
+                var api = `${baseUrl}/embed/mlplayer.php?id=${id}`
+                var hdr = { Origin: baseUrl, Referrer: baseUrl }
+
                 var response = await new Client().get(api, hdr);
 
                 if (response.statusCode != 200) {
-                    throw new Error("hexa.watch unavailable\nPlease choose a different server");
+                    throw new Error("autoembed.cc - mlplayer unavailable\nPlease choose a different server");
+                }
+                var body = response.body
+                var sKey = '"file": '
+                var eKey = "]});"
+                var start = body.indexOf(sKey)
+                if (start < 0) {
+                    throw new Error("autoembed.cc - mlplayer videos unavailable\nPlease choose a different server");
+                }
+                start += sKey.length
+
+                var end = body.substring(start,).indexOf(eKey) + start
+                var strms = JSON.parse(body.substring(start, end) + "]")
+                for (var strm of strms) {
+                    var link = strm.file
+                    var lang = strm.title
+                    var streamSplit = await this.splitStreams(link, lang, hdr);
+                    streams = [...streams, ...streamSplit]
                 }
 
-                var body = JSON.parse(response.body);
-                var strms = body.streams
-                for (var strm of strms) {
-                    var streamLink = strm.url;
-                    if (streamLink.length > 0) {
-                        streams.push({
-                            url: strm.url,
-                            originalUrl: strm.url,
-                            quality: `${strm.label} - Auto`,
-                            headers: strm.headers
-                        });
-                    }
-                }
                 break;
             }
             case 7: {
@@ -493,13 +499,13 @@ class DefaultExtension extends MProvider {
 
                     end = body.substring(start,).indexOf(eKey) + start + 1
                     var natSubs = JSON.parse(body.substring(start, end))
-                    natSubs.forEach(sub=>{
+                    natSubs.forEach(sub => {
                         subtitles.push({
                             file: sub.url,
                             label: sub.display
                         })
                     })
-                   
+
                 }
                 break;
             }
@@ -613,12 +619,12 @@ class DefaultExtension extends MProvider {
             }
         },
         {
-            key: 'autoembed_stream_source_3',
+            key: 'autoembed_stream_source_4',
             listPreference: {
                 title: 'Preferred stream source',
                 summary: '',
                 valueIndex: 0,
-                entries: ["tom.autoembed.cc", "123embed.net", "autoembed.cc - Indian languages", "flicky.host - Indian languages", "vidapi.click", "hexa.watch", "vidsrc.su", "embed.su"],
+                entries: ["tom.autoembed.cc", "123embed.net", "autoembed.cc - Indian languages", "flicky.host - Indian languages", "vidapi.click", "autoembed.cc - mplayer", "vidsrc.su", "embed.su"],
                 entryValues: ["1", "2", "3", "4", "5", "6", "7", "8"]
             }
         },
@@ -628,16 +634,6 @@ class DefaultExtension extends MProvider {
                 'title': 'Use native subtitles as well',
                 "summary": "Use subtitles provided by the source along with subtitle API",
                 "value": true
-            }
-        },
-        {
-            key: 'autoembed_pref_subtitle_source',
-            listPreference: {
-                title: 'Preferred subtitle source',
-                summary: '',
-                valueIndex: 0,
-                entries: ["sub.wyzie.ru", "hexa.watch"],
-                entryValues: ["1", "2"]
             }
         },
         ];
